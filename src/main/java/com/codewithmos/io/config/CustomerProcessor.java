@@ -27,13 +27,6 @@ public class CustomerProcessor implements ItemProcessor<String, AbstractLine> {
 
     @Override
     public AbstractLine process(String input) throws Exception {
-        ICobolIOBuilder ioBldr
-                = JRecordInterface1.COBOL
-                .newIOBuilder("src/main/resources/copybook_customers.cpy")
-                .setFileOrganization(Constants.IO_TEXT_LINE)
-                .setSplitCopybook(CopybookLoader.SPLIT_01_LEVEL)
-                .setDialect(ICopybookDialects.FMT_INTEL)
-                .setDropCopybookNameFromFields(true);
         ICobolIOBuilder ioBldr1 = iCobolIOBuilder;
         byte[] bytes = input.getBytes(StandardCharsets.UTF_8);
         AbstractLineReader reader = ioBldr1.newReader(new ByteArrayInputStream(bytes));
@@ -44,4 +37,6 @@ public class CustomerProcessor implements ItemProcessor<String, AbstractLine> {
         reader.close();
         return line;
     }
+
+
 }

@@ -7,6 +7,8 @@ import lombok.AllArgsConstructor;
 import net.sf.JRecord.Common.Constants;
 import net.sf.JRecord.Details.AbstractLine;
 import net.sf.JRecord.External.CopybookLoader;
+import net.sf.JRecord.IO.AbstractLineReader;
+import net.sf.JRecord.IO.AbstractLineWriter;
 import net.sf.JRecord.JRecordInterface1;
 import net.sf.JRecord.Numeric.ICopybookDialects;
 import net.sf.JRecord.def.IO.builders.ICobolIOBuilder;
@@ -37,6 +39,9 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
 
 @Configuration
@@ -61,22 +66,13 @@ public class SpringBatchConfig {
     }
 
     //@Bean
-    public ICobolIOBuilder CobolReader(){
+
+
+    @Bean
+    public ICobolIOBuilder ReaderWriter(){
         ICobolIOBuilder ioBldr
                 = JRecordInterface1.COBOL
                 .newIOBuilder("src/main/resources/copybook_customers.cpy")
-                .setFileOrganization(Constants.IO_TEXT_LINE)
-                .setSplitCopybook(CopybookLoader.SPLIT_01_LEVEL)
-                .setDialect(ICopybookDialects.FMT_INTEL)
-                .setDropCopybookNameFromFields(true);
-        return ioBldr;
-    }
-
-    @Bean
-    public ICobolIOBuilder CobolWriter(){
-        ICobolIOBuilder ioBldr
-                = JRecordInterface1.COBOL
-                .newIOBuilder("src/main/resources/copybook_customers_out.cpy")
                 .setFileOrganization(Constants.IO_TEXT_LINE)
                 .setSplitCopybook(CopybookLoader.SPLIT_01_LEVEL)
                 .setDialect(ICopybookDialects.FMT_INTEL)
@@ -91,7 +87,7 @@ public class SpringBatchConfig {
     }
 
     @Bean
-    public FlatFileItemWriter<AbstractLine> writer()
+    public FlatFileItemWriter<AbstractLine> writer () throws IOException
     {
         //Create writer instance
         FlatFileItemWriter<AbstractLine> writer = new FlatFileItemWriter<>();
@@ -102,24 +98,56 @@ public class SpringBatchConfig {
         //Name field values sequence based on object properties
 
         writer.setLineAggregator((line) ->
-                line.getFieldValue("Record-Id") +
-                 ":" + line.getFieldValue("FirstName") +
-                 ":" + line.getFieldValue("Dob") +
-                 ":" + line.getFieldValue("LastName") +
-                 ":" + line.getFieldValue("Country") +
-                 ":" + line.getFieldValue("Gender") +
-                 ":" + line.getFieldValue("Email") +
-                 ":" + line.getFieldValue("ContactNo")
+                {
+                    try {
+                        return fileWriter(line);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
         );
 
         return writer;
     }
 
+    public String fileWriter (AbstractLine line) throws IOException {
+        ICobolIOBuilder writer = CobolWriter();
+
+
+
+        AbstractLine outLine = writer.newLine();
+        //writer.set
+        outLine.getFieldValue("Record-Id-Out").set(line.getFieldValue("Record-Id").asBigInteger());
+         outLine.getFieldValue("FirstName-Out").set(line.getFieldValue("FirstName"));
+         outLine.getFieldValue("LastName-Out").set(line.getFieldValue("LastName"));
+         outLine.getFieldValue("Email-Out").set(line.getFieldValue("Email"));
+         outLine.getFieldValue("Gender-Out").set(line.getFieldValue("Gender"));
+         outLine.getFieldValue("ContactNo-Out").set(line.getFieldValue("ContactNo"));
+         outLine.getFieldValue("Country-Out").set(line.getFieldValue("Country"));
+         outLine.getFieldValue("Dob-Out").set(line.getFieldValue("Dob"));
+
+        byte[] bytes = outLine.getData();
+        String output = new String(bytes, StandardCharsets.UTF_8);
+
+         return output;
+
+    }
+
+    public ICobolIOBuilder CobolWriter(){
+        ICobolIOBuilder ioBldr
+                = JRecordInterface1.COBOL
+                .newIOBuilder("src/main/resources/copybook_customers_out.cpy")
+                .setFileOrganization(Constants.IO_TEXT_LINE)
+                .setSplitCopybook(CopybookLoader.SPLIT_01_LEVEL)
+                .setDialect(ICopybookDialects.FMT_INTEL)
+                .setDropCopybookNameFromFields(true);
+        return ioBldr;
+    }
 
 
     @Bean
-    public Step step1() {
-        return stepBuilderFactory.get("cobol-file-reader-step").<String, AbstractLine>chunk(10)
+    public Step step1() throws IOException {
+        return stepBuilderFactory.get("cobol-file-reader-step").<String, AbstractLine>chunk(1)
                 .reader( cobolReader())
                 .processor( processor())
                 .writer(writer())
@@ -127,7 +155,7 @@ public class SpringBatchConfig {
     }
 
     @Bean
-    public Job runJob() {
+    public Job runJob() throws IOException {
         return jobBuilderFactory.get("cobolFileJob")
                 .incrementer(new RunIdIncrementer())
                 .flow(step1())
